@@ -77,7 +77,7 @@ function getGrade(score: number): "S" | "A" | "B" | "C" | "D" {
 function getTips(txCount: number, hasBasename: boolean, uniqueContracts: number, hasNFT: boolean): string[] {
   const tips: string[] = [];
   if (!hasBasename) tips.push("Register your Basename at base.org/names");
-  if (txCount < 20) tips.push("Make more transactions on Base — aim for 20+");
+  if (txCount < 20) tips.push("Make more transactions on Base â€” aim for 20+");
   if (uniqueContracts < 5) tips.push("Interact with more dApps (Aerodrome, Aave, Uniswap)");
   if (!hasNFT) tips.push("Mint an NFT on Base via Zora or Mint.fun");
   if (txCount < 5) tips.push("Bridge ETH to Base and start transacting");
