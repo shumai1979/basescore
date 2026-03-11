@@ -1,12 +1,12 @@
 ﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useMiniKit, useAddFrame, useOpenUrl, useComposeCast } from "@coinbase/onchainkit/minikit";
+import { useMiniKit, useAddFrame, useOpenUrl } from "@coinbase/onchainkit/minikit";
+import { useComposeCast } from "@coinbase/onchainkit/minikit";
 
 interface ScoreResult {
   address: string;
   hasBasename: boolean;
-  basename: string | null;
   txCount: number;
   uniqueContracts: number;
   hasNFT: boolean;
@@ -25,21 +25,6 @@ async function rpc(method: string, params: unknown[]) {
   });
   const data = await res.json();
   return data.result;
-}
-
-async function checkBasename(address: string): Promise<string | null> {
-  try {
-    const RESOLVER = "0xC6d566A56A1aFf6508b41f6c90ff131615583BCD";
-    const node = address.toLowerCase().replace("0x", "").padStart(64, "0");
-    const calldata = "0x3b3b57de" + node;
-    const result = await rpc("eth_call", [{ to: RESOLVER, data: calldata }, "latest"]);
-    if (result && result !== "0x" && result !== "0x" + "0".repeat(64)) {
-      return address.slice(0, 6) + "..." + address.slice(-4) + ".base.eth";
-    }
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 async function getTxCount(address: string): Promise<number> {
@@ -99,14 +84,15 @@ const GRADE_BG: Record<string, string> = {
 
 export default function Page() {
   const { setFrameReady, isFrameReady } = useMiniKit();
-  const addFrame = useAddFrame();
-  const openUrl = useOpenUrl();
-  const composeCast = useComposeCast();
+  const { addFrame } = useAddFrame();
+  const { open: openUrl } = useOpenUrl();
+  const { composeCast } = useComposeCast();
 
   const [address, setAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScoreResult | null>(null);
   const [error, setError] = useState("");
+  const [hasBasename, setHasBasename] = useState(false);
 
   useEffect(() => {
     if (!isFrameReady) setFrameReady();
@@ -121,14 +107,29 @@ export default function Page() {
     setError("");
     setLoading(true);
     setResult(null);
+
     try {
-      const [txCount, basename] = await Promise.all([getTxCount(addr), checkBasename(addr)]);
+      const txCount = await getTxCount(addr);
+      // Check basename via base.org API
+      let basenameFound = false;
+      try {
+        const res = await fetch(`https://www.base.org/api/name?address=${addr}`);
+        if (res.ok) {
+          const data = await res.json();
+          basenameFound = !!data?.name;
+        }
+      } catch {
+        basenameFound = false;
+      }
+      setHasBasename(basenameFound);
+
       const uniqueContracts = Math.min(Math.floor(txCount / 3), 15);
       const hasNFT = txCount > 5;
-      const score = calcScore(txCount, !!basename, uniqueContracts, hasNFT);
+      const score = calcScore(txCount, basenameFound, uniqueContracts, hasNFT);
       const grade = getGrade(score);
-      const tips = getTips(txCount, !!basename, uniqueContracts, hasNFT);
-      setResult({ address: addr, hasBasename: !!basename, basename, txCount, uniqueContracts, hasNFT, score, grade, tips });
+      const tips = getTips(txCount, basenameFound, uniqueContracts, hasNFT);
+
+      setResult({ address: addr, hasBasename: basenameFound, txCount, uniqueContracts, hasNFT, score, grade, tips });
     } catch {
       setError("Failed to fetch data. Try again.");
     } finally {
@@ -140,13 +141,9 @@ export default function Page() {
     if (!result) return;
     composeCast({
       text: `My Base Airdrop Score: ${result.score}/100 (Grade ${result.grade})\n\n${result.tips[0]}\n\nCheck yours`,
-      embeds: [process.env.NEXT_PUBLIC_URL ?? ""],
+      embeds: [process.env.NEXT_PUBLIC_URL ?? "https://basescore.vercel.app"],
     });
   }, [result, composeCast]);
-
-  const handleAddFrame = useCallback(async () => {
-    await addFrame();
-  }, [addFrame]);
 
   return (
     <main className="min-h-screen bg-[#0a0a0f] text-white flex flex-col items-center px-4 py-6 font-sans">
@@ -197,10 +194,10 @@ export default function Page() {
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <StatCard label="Transactions" value={result.txCount.toString()} good={result.txCount >= 20} icon="Lightning" />
-            <StatCard label="Basename" value={result.hasBasename ? "Registered" : "Missing"} good={result.hasBasename} icon="Tag" />
-            <StatCard label="dApps Used" value={`~${result.uniqueContracts}`} good={result.uniqueContracts >= 5} icon="Swap" />
-            <StatCard label="NFT Activity" value={result.hasNFT ? "Active" : "None"} good={result.hasNFT} icon="Art" />
+            <StatCard label="Transactions" value={result.txCount.toString()} good={result.txCount >= 20} icon="Txns" />
+            <StatCard label="Basename" value={hasBasename ? "Registered" : "Missing"} good={hasBasename} icon="Name" />
+            <StatCard label="dApps Used" value={`~${result.uniqueContracts}`} good={result.uniqueContracts >= 5} icon="Apps" />
+            <StatCard label="NFT Activity" value={result.hasNFT ? "Active" : "None"} good={result.hasNFT} icon="NFT" />
           </div>
 
           <div className="bg-[#16161f] rounded-2xl border border-gray-800 p-4">
@@ -213,10 +210,16 @@ export default function Page() {
           </div>
 
           <div className="flex gap-2">
-            <button onClick={handleShare} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold py-3 rounded-xl transition">
+            <button
+              onClick={handleShare}
+              className="flex-1 bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold py-3 rounded-xl transition"
+            >
               Share Score
             </button>
-            <button onClick={handleAddFrame} className="flex-1 bg-[#16161f] border border-gray-700 hover:border-blue-500 text-white text-sm font-semibold py-3 rounded-xl transition">
+            <button
+              onClick={() => addFrame()}
+              className="flex-1 bg-[#16161f] border border-gray-700 hover:border-blue-500 text-white text-sm font-semibold py-3 rounded-xl transition"
+            >
               Save App
             </button>
           </div>
@@ -226,7 +229,10 @@ export default function Page() {
       )}
 
       <div className="mt-auto pt-6">
-        <button onClick={() => openUrl("https://base.org")} className="text-gray-600 text-xs hover:text-gray-400 transition">
+        <button
+          onClick={() => openUrl("https://base.org")}
+          className="text-gray-600 text-xs hover:text-gray-400 transition"
+        >
           Built on Base
         </button>
       </div>
