@@ -85,7 +85,7 @@ const GRADE_BG: Record<string, string> = {
 export default function Page() {
   const { setFrameReady, isFrameReady } = useMiniKit();
   const addFrame = useAddFrame();
-  const { open: openUrl } = useOpenUrl();
+  const openUrl = useOpenUrl();
   const { composeCast } = useComposeCast();
 
   const [address, setAddress] = useState("");
