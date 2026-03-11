@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import { useMiniKit, useAddFrame, useOpenUrl } from "@coinbase/onchainkit/minikit";
@@ -62,7 +62,7 @@ function getGrade(score: number): "S" | "A" | "B" | "C" | "D" {
 function getTips(txCount: number, hasBasename: boolean, uniqueContracts: number, hasNFT: boolean): string[] {
   const tips: string[] = [];
   if (!hasBasename) tips.push("Register your Basename at base.org/names");
-  if (txCount < 20) tips.push("Make more transactions on Base — aim for 20+");
+  if (txCount < 20) tips.push("Make more transactions on Base � aim for 20+");
   if (uniqueContracts < 5) tips.push("Interact with more dApps (Aerodrome, Aave, Uniswap)");
   if (!hasNFT) tips.push("Mint an NFT on Base via Zora or Mint.fun");
   if (txCount < 5) tips.push("Bridge ETH to Base and start transacting");
@@ -84,7 +84,7 @@ const GRADE_BG: Record<string, string> = {
 
 export default function Page() {
   const { setFrameReady, isFrameReady } = useMiniKit();
-  const { addFrame } = useAddFrame();
+  const addFrame = useAddFrame();
   const { open: openUrl } = useOpenUrl();
   const { composeCast } = useComposeCast();
 
