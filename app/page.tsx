@@ -37,10 +37,22 @@ async function getTxCount(address: string): Promise<number> {
 
 async function resolveBasename(address: string): Promise<string | null> {
   try {
-    const res = await fetch(`https://www.base.org/api/name?address=${address}`);
+    // Use Basenames subgraph API
+    const res = await fetch("https://base.org/api/basenames", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `{ domains(where: { resolvedAddress: "${address.toLowerCase()}" }) { name } }` }),
+    });
     if (res.ok) {
       const data = await res.json();
-      return data?.name || null;
+      const names = data?.data?.domains;
+      if (names && names.length > 0) return names[0].name;
+    }
+    // Fallback: Coinbase API
+    const res2 = await fetch(`https://api.coinbase.com/v2/users/${address}/basenames`);
+    if (res2.ok) {
+      const data2 = await res2.json();
+      return data2?.data?.[0]?.name || null;
     }
     return null;
   } catch { return null; }
@@ -259,3 +271,5 @@ export default function Page() {
     </main>
   );
 }
+
+
