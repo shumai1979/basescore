@@ -32,48 +32,18 @@ async function getTxCount(address: string): Promise<number> {
   try {
     const result = await rpc("eth_getTransactionCount", [address, "latest"]);
     return parseInt(result, 16);
-  } catch {
-    return 0;
-  }
+  } catch { return 0; }
 }
 
 async function resolveBasename(address: string): Promise<string | null> {
   try {
-    // L2 Reverse Registrar on Base mainnet
-    const reverseNode = address.toLowerCase().replace("0x", "") + ".addr.reverse";
-    const nameHash = await computeNamehash(reverseNode);
-    
-    // Base L2 Resolver
-    const resolverAddress = "0xC6d566A56A1aFf6508b41f6c90ff131615583BCD";
-    const data = "0x691f3431" + nameHash.slice(2); // name(bytes32)
-    
-    const result = await rpc("eth_call", [{ to: resolverAddress, data }, "latest"]);
-    if (!result || result === "0x") return null;
-    
-    // Decode ABI string
-    const hex = result.slice(2);
-    const offset = parseInt(hex.slice(0, 64), 16) * 2;
-    const length = parseInt(hex.slice(offset, offset + 64), 16) * 2;
-    const nameHex = hex.slice(offset + 64, offset + 64 + length);
-    const name = Buffer.from(nameHex, "hex").toString("utf8").replace(/\0/g, "");
-    return name && name.length > 0 ? name : null;
-  } catch {
+    const res = await fetch(`https://www.base.org/api/name?address=${address}`);
+    if (res.ok) {
+      const data = await res.json();
+      return data?.name || null;
+    }
     return null;
-  }
-}
-
-async function computeNamehash(name: string): Promise<string> {
-  let node = new Uint8Array(32).fill(0);
-  if (name === "") return "0x" + Buffer.from(node).toString("hex");
-  const labels = name.split(".").reverse();
-  for (const label of labels) {
-    const labelHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(label));
-    const combined = new Uint8Array(64);
-    combined.set(node, 0);
-    combined.set(new Uint8Array(labelHash), 32);
-    node = new Uint8Array(await crypto.subtle.digest("SHA-256", combined));
-  }
-  return "0x" + Buffer.from(node).toString("hex");
+  } catch { return null; }
 }
 
 function calcScore(txCount: number, hasBasename: boolean, uniqueContracts: number, hasNFT: boolean) {
@@ -105,17 +75,16 @@ function getTips(txCount: number, hasBasename: boolean, uniqueContracts: number,
   if (txCount < 20) tips.push("Make more transactions on Base — aim for 20+");
   if (uniqueContracts < 5) tips.push("Interact with more dApps (Aerodrome, Aave, Uniswap)");
   if (!hasNFT) tips.push("Mint an NFT on Base via Zora or Mint.fun");
-  if (txCount < 5) tips.push("Bridge ETH to Base and start transacting");
   if (tips.length === 0) tips.push("You are well positioned! Keep transacting regularly");
   return tips.slice(0, 3);
 }
 
-const GRADE_CONFIG: Record<string, { color: string; bg: string; border: string; glow: string; emoji: string }> = {
-  S: { color: "text-yellow-300", bg: "from-yellow-900/50 to-yellow-800/20", border: "border-yellow-500/50", glow: "shadow-yellow-500/20", emoji: "🏆" },
-  A: { color: "text-green-300", bg: "from-green-900/50 to-green-800/20", border: "border-green-500/50", glow: "shadow-green-500/20", emoji: "⭐" },
-  B: { color: "text-blue-300", bg: "from-blue-900/50 to-blue-800/20", border: "border-blue-500/50", glow: "shadow-blue-500/20", emoji: "✨" },
-  C: { color: "text-orange-300", bg: "from-orange-900/50 to-orange-800/20", border: "border-orange-500/50", glow: "shadow-orange-500/20", emoji: "📈" },
-  D: { color: "text-red-300", bg: "from-red-900/50 to-red-800/20", border: "border-red-500/50", glow: "shadow-red-500/20", emoji: "🔥" },
+const GRADE_COLORS: Record<string, { main: string; bg: string; border: string }> = {
+  S: { main: "#fbbf24", bg: "rgba(251,191,36,0.08)", border: "rgba(251,191,36,0.3)" },
+  A: { main: "#34d399", bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.3)" },
+  B: { main: "#60a5fa", bg: "rgba(96,165,250,0.08)", border: "rgba(96,165,250,0.3)" },
+  C: { main: "#fb923c", bg: "rgba(251,146,60,0.08)", border: "rgba(251,146,60,0.3)" },
+  D: { main: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.3)" },
 };
 
 export default function Page() {
@@ -142,20 +111,14 @@ export default function Page() {
     setError("");
     setLoading(true);
     setResult(null);
-
     try {
-      const [txCount, basename] = await Promise.all([
-        getTxCount(addr),
-        resolveBasename(addr),
-      ]);
-
+      const [txCount, basename] = await Promise.all([getTxCount(addr), resolveBasename(addr)]);
       const hasBasename = !!basename;
       const uniqueContracts = Math.min(Math.floor(txCount / 3), 15);
       const hasNFT = txCount > 5;
       const score = calcScore(txCount, hasBasename, uniqueContracts, hasNFT);
       const grade = getGrade(score);
       const tips = getTips(txCount, hasBasename, uniqueContracts, hasNFT);
-
       setResult({ address: addr, basename, hasBasename, txCount, uniqueContracts, hasNFT, score, grade, tips });
     } catch {
       setError("Failed to fetch data. Please try again.");
@@ -167,185 +130,132 @@ export default function Page() {
   const handleShare = useCallback(() => {
     if (!result) return;
     composeCast({
-      text: `🏆 My Base Airdrop Score: ${result.score}/100 (Grade ${result.grade})\n\n${result.tips[0]}\n\nCheck yours 👇`,
+      text: `My Base Airdrop Score: ${result.score}/100 (Grade ${result.grade})\n\n${result.tips[0]}\n\nCheck yours`,
       embeds: [process.env.NEXT_PUBLIC_URL ?? "https://basescore.vercel.app"],
     });
   }, [result, composeCast]);
 
-  const cfg = result ? GRADE_CONFIG[result.grade] : null;
+  const gc = result ? GRADE_COLORS[result.grade] : null;
 
   return (
-    <main className="min-h-screen bg-[#080810] text-white flex flex-col items-center px-4 py-6 font-sans">
-      
+    <main style={{ minHeight: "100vh", background: "#08080f", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", padding: "24px 16px", fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+
       {/* Header */}
-      <div className="w-full max-w-sm mb-8">
-        <div className="flex items-center gap-2 mb-3">
-          <div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center font-black text-lg shadow-lg shadow-blue-500/30">B</div>
-          <span className="text-blue-400 font-bold text-sm tracking-widest uppercase">BaseScore</span>
+      <div style={{ width: "100%", maxWidth: 380, marginBottom: 32 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: "linear-gradient(135deg, #2563eb, #1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, fontSize: 18, boxShadow: "0 4px 12px rgba(37,99,235,0.4)" }}>B</div>
+          <span style={{ color: "#60a5fa", fontWeight: 700, fontSize: 13, letterSpacing: "0.12em", textTransform: "uppercase" }}>BaseScore</span>
         </div>
-        <h1 className="text-3xl font-black text-white leading-tight tracking-tight">
+        <h1 style={{ fontSize: 28, fontWeight: 900, lineHeight: 1.2, margin: 0, letterSpacing: "-0.02em" }}>
           Base Airdrop<br />
-          <span className="text-blue-400">Readiness Check</span>
+          <span style={{ color: "#3b82f6" }}>Readiness Check</span>
         </h1>
-        <p className="text-gray-500 text-sm mt-2">See how your wallet is positioned for the Base airdrop</p>
+        <p style={{ color: "#6b7280", fontSize: 14, marginTop: 8, marginBottom: 0 }}>See how your wallet is positioned for the Base airdrop</p>
       </div>
 
       {/* Input */}
-      <div className="w-full max-w-sm mb-6">
-        <div className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">👛</div>
+      <div style={{ width: "100%", maxWidth: 380, marginBottom: 24 }}>
+        <div style={{ position: "relative" }}>
+          <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16 }}>👛</span>
           <input
             type="text"
             value={address}
             onChange={(e) => { setAddress(e.target.value); setError(""); }}
             onKeyDown={(e) => e.key === "Enter" && checkScore()}
             placeholder="0x... paste your Base wallet"
-            className="w-full bg-[#12121e] border border-gray-700/60 rounded-2xl pl-10 pr-4 py-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-blue-500/70 focus:bg-[#14142a] transition-all"
+            style={{ width: "100%", background: "#12121e", border: "1px solid #1f2937", borderRadius: 16, padding: "14px 14px 14px 42px", fontSize: 14, color: "#fff", outline: "none", boxSizing: "border-box", transition: "border-color 0.2s" }}
+            onFocus={e => e.target.style.borderColor = "#3b82f6"}
+            onBlur={e => e.target.style.borderColor = "#1f2937"}
           />
         </div>
-        {error && (
-          <p className="text-red-400 text-xs mt-2 px-1 flex items-center gap-1">
-            <span>⚠️</span> {error}
-          </p>
-        )}
+        {error && <p style={{ color: "#f87171", fontSize: 12, marginTop: 8, marginLeft: 4 }}>⚠️ {error}</p>}
         <button
           onClick={checkScore}
           disabled={loading}
-          className="w-full mt-3 bg-blue-600 hover:bg-blue-500 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-4 rounded-2xl transition-all shadow-lg shadow-blue-600/30 text-sm tracking-wide"
+          style={{ width: "100%", marginTop: 12, background: loading ? "#1e3a8a" : "linear-gradient(135deg, #2563eb, #1d4ed8)", border: "none", borderRadius: 16, padding: "16px", color: "#fff", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.7 : 1, boxShadow: "0 4px 16px rgba(37,99,235,0.35)", letterSpacing: "0.02em", transition: "opacity 0.2s" }}
         >
-          {loading ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⟳</span> Checking your wallet...
-            </span>
-          ) : "Check My Score →"}
+          {loading ? "⟳ Checking your wallet..." : "Check My Score →"}
         </button>
       </div>
 
       {/* Results */}
-      {result && cfg && (
-        <div className="w-full max-w-sm space-y-3 animate-fade-in">
-          
+      {result && gc && (
+        <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 12 }}>
+
           {/* Score Card */}
-          <div className={`rounded-3xl border bg-gradient-to-br p-6 shadow-xl ${cfg.bg} ${cfg.border} ${cfg.glow}`}>
-            <div className="flex items-start justify-between mb-5">
+          <div style={{ background: gc.bg, border: `1px solid ${gc.border}`, borderRadius: 24, padding: 24, boxShadow: `0 8px 32px ${gc.border}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
               <div>
-                <p className="text-gray-400 text-xs uppercase tracking-widest mb-2">Airdrop Score</p>
-                <div className="flex items-end gap-2">
-                  <span className="text-6xl font-black text-white">{result.score}</span>
-                  <span className="text-gray-500 text-xl mb-2">/100</span>
+                <p style={{ color: "#9ca3af", fontSize: 11, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 8px 0" }}>Airdrop Score</p>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 6 }}>
+                  <span style={{ fontSize: 56, fontWeight: 900, lineHeight: 1, color: "#fff" }}>{result.score}</span>
+                  <span style={{ color: "#6b7280", fontSize: 20, marginBottom: 6 }}>/100</span>
                 </div>
-                {result.basename && (
-                  <p className="text-gray-400 text-xs mt-1">👤 {result.basename}</p>
-                )}
+                {result.basename && <p style={{ color: "#9ca3af", fontSize: 12, margin: "6px 0 0 0" }}>👤 {result.basename}</p>}
               </div>
-              <div className="text-right">
-                <div className={`text-7xl font-black ${cfg.color} leading-none`}>{result.grade}</div>
-                <div className="text-2xl mt-1">{cfg.emoji}</div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 64, fontWeight: 900, lineHeight: 1, color: gc.main }}>{result.grade}</div>
               </div>
             </div>
-            
-            {/* Progress bar */}
-            <div className="w-full h-2 bg-black/40 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-600 to-blue-400 rounded-full transition-all duration-1000"
-                style={{ width: `${result.score}%` }}
-              />
+            <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: 8, height: 8, overflow: "hidden" }}>
+              <div style={{ height: "100%", width: `${result.score}%`, background: `linear-gradient(90deg, #2563eb, ${gc.main})`, borderRadius: 8, transition: "width 1s ease" }} />
             </div>
-            <div className="flex justify-between text-xs text-gray-600 mt-1">
-              <span>0</span>
-              <span>50</span>
-              <span>100</span>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11, color: "#4b5563" }}>
+              <span>0</span><span>50</span><span>100</span>
             </div>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-2 gap-2">
-            <StatCard
-              icon="⚡"
-              label="Transactions"
-              value={result.txCount.toLocaleString()}
-              sub={result.txCount >= 100 ? "Excellent" : result.txCount >= 20 ? "Good" : "Low"}
-              good={result.txCount >= 20}
-            />
-            <StatCard
-              icon="🏷️"
-              label="Basename"
-              value={result.basename ?? "Not found"}
-              sub={result.hasBasename ? "Registered ✓" : "Missing"}
-              good={result.hasBasename}
-            />
-            <StatCard
-              icon="🔗"
-              label="dApps Used"
-              value={`~${result.uniqueContracts}`}
-              sub={result.uniqueContracts >= 10 ? "Power user" : result.uniqueContracts >= 5 ? "Active" : "Low activity"}
-              good={result.uniqueContracts >= 5}
-            />
-            <StatCard
-              icon="🖼️"
-              label="NFT Activity"
-              value={result.hasNFT ? "Active" : "None"}
-              sub={result.hasNFT ? "NFTs detected" : "No NFTs found"}
-              good={result.hasNFT}
-            />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              { icon: "⚡", label: "Transactions", value: result.txCount.toLocaleString(), sub: result.txCount >= 100 ? "Excellent" : result.txCount >= 20 ? "Good" : "Low activity", good: result.txCount >= 20 },
+              { icon: "🏷️", label: "Basename", value: result.basename ?? "Not found", sub: result.hasBasename ? "Registered ✓" : "Missing", good: result.hasBasename },
+              { icon: "🔗", label: "dApps Used", value: `~${result.uniqueContracts}`, sub: result.uniqueContracts >= 10 ? "Power user" : result.uniqueContracts >= 5 ? "Active" : "Low activity", good: result.uniqueContracts >= 5 },
+              { icon: "🖼️", label: "NFT Activity", value: result.hasNFT ? "Active" : "None", sub: result.hasNFT ? "NFTs detected" : "No NFTs found", good: result.hasNFT },
+            ].map((s, i) => (
+              <div key={i} style={{ background: "#12121e", border: `1px solid ${s.good ? "rgba(52,211,153,0.25)" : "#1f2937"}`, borderRadius: 18, padding: "14px 16px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 16 }}>{s.icon}</span>
+                  <span style={{ color: "#6b7280", fontSize: 11 }}>{s.label}</span>
+                </div>
+                <p style={{ margin: 0, fontWeight: 700, fontSize: 15, color: s.good ? "#fff" : "#9ca3af", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.value}</p>
+                <p style={{ margin: "3px 0 0 0", fontSize: 11, color: s.good ? "#34d399" : "#4b5563" }}>{s.sub}</p>
+              </div>
+            ))}
           </div>
 
           {/* Tips */}
-          <div className="bg-[#12121e] rounded-2xl border border-gray-800/60 p-4">
-            <p className="text-gray-400 text-xs uppercase tracking-widest mb-3 flex items-center gap-1">
-              <span>💡</span> What to do next
-            </p>
-            <ul className="space-y-2">
+          <div style={{ background: "#12121e", border: "1px solid #1f2937", borderRadius: 20, padding: 18 }}>
+            <p style={{ color: "#6b7280", fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 14px 0" }}>💡 What to do next</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {result.tips.map((tip, i) => (
-                <li key={i} className="text-sm text-gray-300 flex items-start gap-2">
-                  <span className="text-blue-400 mt-0.5">→</span>
-                  <span>{tip}</span>
-                </li>
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                  <span style={{ color: "#3b82f6", fontWeight: 700, flexShrink: 0, marginTop: 1 }}>→</span>
+                  <span style={{ color: "#d1d5db", fontSize: 13, lineHeight: 1.5 }}>{tip}</span>
+                </div>
               ))}
-            </ul>
+            </div>
           </div>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            <button
-              onClick={handleShare}
-              className="flex-1 bg-purple-600 hover:bg-purple-500 active:scale-95 text-white text-sm font-bold py-3.5 rounded-2xl transition-all shadow-lg shadow-purple-600/20 flex items-center justify-center gap-1"
-            >
+          {/* Buttons */}
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={handleShare} style={{ flex: 1, background: "linear-gradient(135deg, #7c3aed, #6d28d9)", border: "none", borderRadius: 16, padding: "14px", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer", boxShadow: "0 4px 12px rgba(124,58,237,0.3)" }}>
               🔗 Share Score
             </button>
-            <button
-              onClick={() => addFrame()}
-              className="flex-1 bg-[#12121e] border border-gray-700/60 hover:border-blue-500/50 text-white text-sm font-bold py-3.5 rounded-2xl transition-all flex items-center justify-center gap-1"
-            >
+            <button onClick={() => addFrame()} style={{ flex: 1, background: "#12121e", border: "1px solid #1f2937", borderRadius: 16, padding: "14px", color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
               📌 Save App
             </button>
           </div>
 
-          <p className="text-gray-700 text-xs text-center pb-2">Estimate only. No Base airdrop has been announced.</p>
+          <p style={{ color: "#374151", fontSize: 11, textAlign: "center", paddingBottom: 8 }}>Estimate only. No Base airdrop has been announced.</p>
         </div>
       )}
 
-      <div className="mt-auto pt-6">
-        <button
-          onClick={() => openUrl("https://base.org")}
-          className="text-gray-700 text-xs hover:text-gray-500 transition flex items-center gap-1"
-        >
+      <div style={{ marginTop: "auto", paddingTop: 24 }}>
+        <button onClick={() => openUrl("https://base.org")} style={{ background: "none", border: "none", color: "#374151", fontSize: 12, cursor: "pointer" }}>
           ⬡ Built on Base
         </button>
       </div>
     </main>
-  );
-}
-
-function StatCard({ icon, label, value, sub, good }: { icon: string; label: string; value: string; sub: string; good: boolean }) {
-  return (
-    <div className={`bg-[#12121e] border rounded-2xl p-4 transition-all ${good ? "border-green-700/50" : "border-gray-800/60"}`}>
-      <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-base">{icon}</span>
-        <p className="text-gray-500 text-xs">{label}</p>
-      </div>
-      <p className={`text-base font-bold truncate ${good ? "text-white" : "text-gray-400"}`}>{value}</p>
-      <p className={`text-xs mt-0.5 ${good ? "text-green-400" : "text-gray-600"}`}>{sub}</p>
-    </div>
   );
 }
