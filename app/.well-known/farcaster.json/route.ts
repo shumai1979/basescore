@@ -1,7 +1,17 @@
-﻿import { withValidManifest } from "@coinbase/onchainkit/minikit";
-import { minikitConfig } from "../../../minikit.config";
-
-export async function GET() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return Response.json(withValidManifest(minikitConfig as any));
+﻿export async function GET() {
+  return Response.json({
+    accountAssociation: {
+      header: "",
+      payload: "",
+      signature: ""
+    },
+    frame: {
+      version: "1",
+      name: "BaseScore",
+      iconUrl: "https://basescore-cesar-freitas-projects.vercel.app/icon.png",
+      homeUrl: "https://basescore-cesar-freitas-projects.vercel.app",
+      splashBackgroundColor: "#0052FF",
+      webhookUrl: ""
+    }
+  });
 }
